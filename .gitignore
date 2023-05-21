@@ -1,0 +1,10 @@
+# img
+*.jpg
+*.png
+
+# vid
+*.avi
+*.mp4
+
+# numpy saved file
+*.npy
