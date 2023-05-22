@@ -4,6 +4,7 @@ import sklearn.decomposition as decompositon
 import cv2
 from scipy.linalg import svdvals
 from enum import Enum, auto
+import os 
 
 
 class MODE(Enum):
@@ -18,7 +19,6 @@ def init_params(mode: MODE, shape):
     """
     m, n = shape
 
-    delta = 1  # TODO: might need tuning
     gamma = 0.05 if mode == MODE.BACKGROUND_EXTRACTION else 0.05
     lam = 20 if mode == MODE.BACKGROUND_EXTRACTION else 1
     beta = 1.618 if mode == MODE.BACKGROUND_EXTRACTION else 1.5
@@ -28,14 +28,11 @@ def init_params(mode: MODE, shape):
     r = 8  # TODO: might need tuning
     S_k = np.random.randn(m, n)
     V_k = np.random.randn(n, r)
-    PI_k = np.random.randn(m, n) # TODO init?
-    # S_k = np.zeros((m, n))
-    # V_k = np.zeros((n, r))
-    # PI_k = np.zeros((m, n)) # TODO init?
+    PI_k = np.random.randn(m, n) 
     # max_iter = 2_000
     max_iter = 10
 
-    return delta, gamma, lam, beta, eps, ro_k, ro_max, r, S_k, V_k, PI_k, max_iter
+    return gamma, lam, beta, eps, ro_k, ro_max, r, S_k, V_k, PI_k, max_iter
 
 
 def MFRPCA(D: arr, mode: MODE ) -> tuple[np.ndarray, np.ndarray]:
@@ -53,7 +50,7 @@ def MFRPCA(D: arr, mode: MODE ) -> tuple[np.ndarray, np.ndarray]:
     11: end while
     """
     m, n = D.shape
-    delta, gamma, lam, beta, eps, ro_k, ro_max, r, S_k, V_k, PI_k, max_iter = init_params(mode, D.shape)
+    gamma, lam, beta, eps, ro_k, ro_max, r, S_k, V_k, PI_k, max_iter = init_params(mode, D.shape)
 
     U_k = np.zeros((m, r))
     k = 0
@@ -66,7 +63,7 @@ def MFRPCA(D: arr, mode: MODE ) -> tuple[np.ndarray, np.ndarray]:
         # step 3: U_k (12)
         U_k = update_U(T, S_k, V_k) 
         # step 4: V_k (16)
-        V_k = update_V(T, S_k, U_k, lam, delta, V_k, gamma, ro_k) 
+        V_k = update_V(T, S_k, U_k, lam, V_k, gamma, ro_k) 
         # intermediate step: U_k V_k^T
         U_dot_VT = np.dot(U_k, V_k.T)
         # step 5: W_k
@@ -96,7 +93,7 @@ def update_U(T, S, V) -> np.ndarray:
     U = np.dot(A, BT)
     return U
 
-def update_V(T: arr, S: arr, U: arr, lam, delta, V_prev: arr, gamma, ro) -> np.ndarray:
+def update_V(T: arr, S: arr, U: arr, lam, V_prev: arr, gamma, ro) -> np.ndarray:
     delta_V_gamma_norm = get_gamma_norm(V_prev, gamma)
     V = np.dot((T - S).T, U) - lam * delta_V_gamma_norm / ro
     return V
@@ -109,10 +106,6 @@ def get_gamma_norm(V: np.ndarray, gamma):
     
     delta_V_gamma_norm = np.linalg.multi_dot([A_V, diag_l, B_VT]) # (14)
     return delta_V_gamma_norm
-
-    # singular_values = svdvals(V)
-    # V_gamma_norm = np.sum(1 - np.power(np.e, (singular_values*-1) * V / gamma)) # TODO: singular_values * V
-    # return V_gamma_norm
 
 def update_S(W: np.ndarray, ro) -> np.ndarray:
     W_ro_max = np.maximum(np.abs(W) - 1/ro, 0)
@@ -141,7 +134,7 @@ def video_frame_by_frame_background():
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         
         L, S = MFRPCA(frame, mode)
-        normalized = cv2.normalize(L, None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)    
+        normalized = normalize_matrix(L)
 
         print(f_ctr)
         f_ctr += 1
@@ -166,20 +159,16 @@ def image_background():
     print(f"{L = }")
     print(f"{np.linalg.matrix_rank(L) = }")
 
-    normalized = cv2.normalize(L, None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)    
+    normalized = normalize_matrix(L)
     # Lmin = np.min(L)
     # Lmax = np.max(L)
     # normalized = (L-Lmin) / (Lmax - Lmin) 
     print(normalized)
     
     cv2.imshow("D", D)
-    # cv2.imshow("L", L)
-    # cv2.imshow("S", S)
-    # cv2.imshow("S + normalized", S + normalized)
     cv2.imshow("normalized", normalized)
-    # cv2.imshow("D - normalized", D - 255*normalized)
     D_minus_normalized = D - 255*normalized
-    D_minus_normalized = cv2.normalize(D_minus_normalized, None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
+    D_minus_normalized = normalize_matrix(D_minus_normalized)
     cv2.imshow("D_minus_normalized", D_minus_normalized)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
@@ -194,13 +183,13 @@ def image_denoise():
     print(f"{L = }")
     print(f"{np.linalg.matrix_rank(L) = }")
 
-    normalized = cv2.normalize(L, None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)    
+    normalized = normalize_matrix(L)    
     print(normalized)
     
     cv2.imshow("D", D)
     cv2.imshow("normalized", normalized)
     D_minus_normalized = D - 255*normalized
-    D_minus_normalized = cv2.normalize(D_minus_normalized, None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
+    D_minus_normalized = normalize_matrix(D_minus_normalized)
     cv2.imshow("D_minus_normalized", D_minus_normalized)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
@@ -210,37 +199,82 @@ def video_all_at_once_background():
     import moviepy.editor as mpe
     import sklearn.decomposition
     import matplotlib.pyplot as plt
-
-    video = mpe.VideoFileClip("videos/122.mp4")
     
-    def create_data_matrix_from_video(clip, k, dims):
-        return np.vstack([cv2.resize(rgb2gray(clip.get_frame(i/float(k))), dims)
-                        .flatten() for i in range(k * int(clip.duration))]).T
+    def create_data_matrix_from_video(clip, FPS, dims):
+        all_frames = list()
+        for i in range(int(FPS * clip.duration)):
+            print(f"frame {i: 3}")
+            frame = clip.get_frame(i/float(FPS))
+            frame = rgb2gray(frame)
+            all_frames.append(cv2.resize(frame, dims).flatten())
+        return np.vstack(all_frames).T
+        # return np.vstack([cv2.resize(rgb2gray(clip.get_frame(i/float(k))), dims)
+        #                 .flatten() for i in range(k * int(clip.duration))]).T
 
     def rgb2gray(rgb):
         return np.dot(rgb[...,:3], [0.299, 0.587, 0.114])
 
-    scale = 25   # Adjust scale to change resolution of image
-    dims = (int(480 * (scale/100)), int(640 * (scale/100)))
+    # vidname = "Video_003.avi"
+    vidname = "122.MP4"
+    video = mpe.VideoFileClip(f"videos/{vidname}")
+    FPS = video.fps
+    w, h = video.size
+    scale = 100/100   # Adjust scale to change resolution of image
+    dims = (int(h * scale), int(w * scale))
 
-    # M = create_data_matrix_from_video(video, 100, (dims[1], dims[0]))
-    # np.save("50_res_122_matrix.npy", M)
-    M = np.load("50_res_122_matrix.npy")
+    vid_matrix_filename = f"vid_{vidname}_{scale:.3f}scaled_matrix.npy"
+    if os.path.isfile(vid_matrix_filename):
+        print("load M"); 
+        M = np.load(vid_matrix_filename)
+    else:
+        M = create_data_matrix_from_video(video, FPS, (dims[1], dims[0]))
+        np.save(vid_matrix_filename, M)
 
-    u, s, v = sklearn.decomposition.randomized_svd(M, 2)
-    # low_rank = u @ np.diag(s) @ v
-    low_rank, S = MFRPCA(M, mode=MODE.BACKGROUND_EXTRACTION)
-    normalized = cv2.normalize(low_rank, None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)   
+    low_rank_matrix_filename = vid_matrix_filename.replace(".npy", "_lowrank.npy")
+    if os.path.isfile(low_rank_matrix_filename):
+        print("load low_rank"); 
+        low_rank = np.load(low_rank_matrix_filename)
+    else:
+        low_rank, S = MFRPCA(M, mode=MODE.BACKGROUND_EXTRACTION)
+        np.save(low_rank_matrix_filename, low_rank)
 
-    plt.imsave(fname="outputs/original.jpg", arr=np.reshape(M[:,2300], dims), cmap='gray')
-    plt.imsave(fname="outputs/low_rank.jpg", arr=np.reshape(low_rank[:,2300], dims), cmap='gray')
-    plt.imsave(fname="outputs/low_rank_normalized.jpg", arr=np.reshape(normalized[:,2300], dims), cmap='gray')
+    normalized = normalize_matrix(low_rank)
+    rows, cols = normalized.shape
+    # out = cv2.VideoWriter(f'vid_{vidname}_background_extracted.mp4', cv2.VideoWriter_fourcc(*'mp4v'), FPS, (dims[1], dims[0]), False)
+    out_bg = cv2.VideoWriter(f'vid_{vidname}_background_extracted.mp4', cv2.VideoWriter_fourcc(*'mp4v'), FPS, (dims[1], dims[0]), False)
+    out_fg = cv2.VideoWriter(f'vid_{vidname}_foreground_extracted.mp4', cv2.VideoWriter_fourcc(*'mp4v'), FPS, (dims[1], dims[0]), False)
+    for i in range(cols):
+        print(f"frame {i}")
+        M_frame = np.reshape(M[:, i], dims)
+        L_frame = np.reshape(normalized[:, i], dims)
+        L_frame = np.uint8(L_frame * 255) # needs to be 0-255 int for writing video
+        
+        frame = normalize_matrix(M_frame - L_frame)
+        frame = np.uint8(frame * 255) # needs to be 0-255 int for writing video
+
+        out_bg.write(L_frame)
+        out_fg.write(frame)
+
+        cv2.imshow("L_frame", L_frame)
+        cv2.imshow("frame", frame)
+        k = cv2.waitKey(1)
+        if k == 27: break
+    out_bg.release()
+    out_fg.release()
+    cv2.destroyAllWindows()
+
+    # plt.imsave(fname="outputs/original.jpg", arr=np.reshape(M[:,550], dims), cmap='gray')
+    # plt.imsave(fname="outputs/low_rank.jpg", arr=np.reshape(low_rank[:,550], dims), cmap='gray')
+    # plt.imsave(fname="outputs/low_rank_normalized.jpg", arr=np.reshape(normalized[:,550], dims), cmap='gray')
 
 
+def normalize_matrix(mat: np.ndarray):
+    """Helper for normalizing values in the matrix between 0 and 1."""
+    return cv2.normalize(mat, None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
 
 
 if __name__ == "__main__":
     # video_frame_by_frame_background()
     # image_background()
-    # video_all_at_once_background()
-    image_denoise()
+    video_all_at_once_background()
+    # image_denoise()
