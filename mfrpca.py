@@ -8,6 +8,9 @@ import os
 
 
 class MODE(Enum):
+    """
+    Used for determining the hyperparameter values according to the task 
+    """
     BACKGROUND_EXTRACTION = auto()
     IMAGE_DENOISING = auto()
 
@@ -89,16 +92,25 @@ def MFRPCA(D: arr, mode: MODE ) -> tuple[np.ndarray, np.ndarray]:
 #######################################################################################################
 
 def update_U(T, S, V) -> np.ndarray:
+    """
+    Update U by (12)
+    """
     A, _, BT = np.linalg.svd(np.dot(T - S, V), compute_uv=True, full_matrices=False) # u, s, vh
     U = np.dot(A, BT)
     return U
 
 def update_V(T: arr, S: arr, U: arr, lam, V_prev: arr, gamma, ro) -> np.ndarray:
-    delta_V_gamma_norm = get_gamma_norm(V_prev, gamma)
+    """
+    Update V by (16)
+    """
+    delta_V_gamma_norm = get_delta_gamma_norm(V_prev, gamma)
     V = np.dot((T - S).T, U) - lam * delta_V_gamma_norm / ro
     return V
 
-def get_gamma_norm(V: np.ndarray, gamma):
+def get_delta_gamma_norm(V: np.ndarray, gamma):
+    """
+    Computed according to Lemma 1 (14)
+    """
     A_V, SIGMA, B_VT = np.linalg.svd(V, compute_uv=True, full_matrices=False)
     singular_values = svdvals(V)    
     diag_l = np.power(np.e, (singular_values * -1) / gamma) / gamma
@@ -108,16 +120,25 @@ def get_gamma_norm(V: np.ndarray, gamma):
     return delta_V_gamma_norm
 
 def update_S(W: np.ndarray, ro) -> np.ndarray:
+    """
+    Update S by (17)
+    """
     W_ro_max = np.maximum(np.abs(W) - 1/ro, 0)
     W_sign = np.sign(W)
     S = np.multiply(W_ro_max, W_sign)
     return S
 
 def update_PI(PI_prev: arr, ro, D: arr, U_dot_VT: arr, S: arr) -> np.ndarray:
+    """
+    Update PI by (9)
+    """
     PI = PI_prev + ro * (D - U_dot_VT - S)
     return PI
 
 def update_ro(beta, ro_prev, ro_max):
+    """
+    Update rho by (10)
+    """
     return min(beta * ro_prev, ro_max)
 
 #######################################################################################################
@@ -125,6 +146,9 @@ def update_ro(beta, ro_prev, ro_max):
 #######################################################################################################
 
 def video_frame_by_frame_background():
+    """
+    Test function: Applies MFRPCA algorithm to a video (frame by frame) for background extraction 
+    """
     mode = MODE.BACKGROUND_EXTRACTION
     vid = cv2.VideoCapture("videos/112.mp4")
     f_ctr = 0
@@ -149,6 +173,10 @@ def video_frame_by_frame_background():
 
 
 def image_background():
+    """
+    Test function: Applies MFRPCA algorithm to an image for background extraction 
+    """
+
     mode = MODE.BACKGROUND_EXTRACTION
     # D = cv2.imread("./images/car.png", cv2.IMREAD_GRAYSCALE)
     # D = cv2.imread("./images/man_beach.png", cv2.IMREAD_GRAYSCALE)
@@ -175,6 +203,9 @@ def image_background():
 
 
 def image_denoise():
+    """
+    Test function: Applies MFRPCA algorithm to an image for denoising
+    """
     mode = MODE.IMAGE_DENOISING
     D = cv2.imread("./images/noisy_image.png", cv2.IMREAD_GRAYSCALE)
     print("D:\n", D, D.shape)
@@ -196,6 +227,10 @@ def image_denoise():
 
 
 def video_all_at_once_background():
+    """
+    Test function: Extracts background video from a video by creating a single matrix composing of the frames
+    """
+
     import moviepy.editor as mpe
     import sklearn.decomposition
     import matplotlib.pyplot as plt
@@ -214,8 +249,8 @@ def video_all_at_once_background():
     def rgb2gray(rgb):
         return np.dot(rgb[...,:3], [0.299, 0.587, 0.114])
 
-    # vidname = "Video_003.avi"
-    vidname = "122.MP4"
+    vidname = "Video_003.avi"
+    # vidname = "122.MP4"
     video = mpe.VideoFileClip(f"videos/{vidname}")
     FPS = video.fps
     w, h = video.size
@@ -228,7 +263,7 @@ def video_all_at_once_background():
         M = np.load(vid_matrix_filename)
     else:
         M = create_data_matrix_from_video(video, FPS, (dims[1], dims[0]))
-        np.save(vid_matrix_filename, M)
+        np.save(vid_matrix_filename, M) # save in order to be able to load from file later, instead of creating from scratch
 
     low_rank_matrix_filename = vid_matrix_filename.replace(".npy", "_lowrank.npy")
     if os.path.isfile(low_rank_matrix_filename):
@@ -236,11 +271,10 @@ def video_all_at_once_background():
         low_rank = np.load(low_rank_matrix_filename)
     else:
         low_rank, S = MFRPCA(M, mode=MODE.BACKGROUND_EXTRACTION)
-        np.save(low_rank_matrix_filename, low_rank)
+        np.save(low_rank_matrix_filename, low_rank) # save in order to be able to load from file later, instead of creating from scratch
 
     normalized = normalize_matrix(low_rank)
     rows, cols = normalized.shape
-    # out = cv2.VideoWriter(f'vid_{vidname}_background_extracted.mp4', cv2.VideoWriter_fourcc(*'mp4v'), FPS, (dims[1], dims[0]), False)
     out_bg = cv2.VideoWriter(f'vid_{vidname}_background_extracted.mp4', cv2.VideoWriter_fourcc(*'mp4v'), FPS, (dims[1], dims[0]), False)
     out_fg = cv2.VideoWriter(f'vid_{vidname}_foreground_extracted.mp4', cv2.VideoWriter_fourcc(*'mp4v'), FPS, (dims[1], dims[0]), False)
     for i in range(cols):
@@ -255,10 +289,27 @@ def video_all_at_once_background():
         out_bg.write(L_frame)
         out_fg.write(frame)
 
+        # Post-processing steps: obtain clear foreground and background images
+        # by applying opening and closing. 
+        kernel = np.ones((3,3), np.uint8)
+        
+        L_frame2 = L_frame.copy()
+        # L_frame2 = cv2.erode(L_frame2, kernel, iterations=2)
+        # L_frame2 = cv2.dilate(L_frame2, kernel, iterations=2)
+        
+        frame2 = frame.copy()
+        frame2 = cv2.erode(frame2, kernel, iterations=1)
+        frame2 = cv2.dilate(frame2, kernel, iterations=1)
+        frame2[frame2 > 90] = 0
+        frame2[frame2 != 0] = 255
+
         cv2.imshow("L_frame", L_frame)
         cv2.imshow("frame", frame)
-        k = cv2.waitKey(1)
+        cv2.imshow("L_frame2", L_frame2)
+        cv2.imshow("frame2", frame2)
+        k = cv2.waitKey(10)
         if k == 27: break
+        
     out_bg.release()
     out_fg.release()
     cv2.destroyAllWindows()
@@ -271,6 +322,7 @@ def video_all_at_once_background():
 def normalize_matrix(mat: np.ndarray):
     """Helper for normalizing values in the matrix between 0 and 1."""
     return cv2.normalize(mat, None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
+
 
 
 if __name__ == "__main__":

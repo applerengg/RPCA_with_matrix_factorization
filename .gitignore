@@ -8,3 +8,6 @@
 
 # numpy saved file
 *.npy
+
+*.pdf
+*.zip
