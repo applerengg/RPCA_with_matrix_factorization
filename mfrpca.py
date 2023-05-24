@@ -1,3 +1,11 @@
+"""
+Implementation of the paper Robust Principal Component Analysis with Matrix Factorization
+
+Alp Eren Gençoğlu - 504221501
+Burak Bozdağ - 504211552
+"""
+
+
 import numpy as np
 import sklearn as sk
 import sklearn.decomposition as decompositon
@@ -309,7 +317,7 @@ def video_all_at_once_background():
         cv2.imshow("frame2", frame2)
         k = cv2.waitKey(10)
         if k == 27: break
-        
+
     out_bg.release()
     out_fg.release()
     cv2.destroyAllWindows()

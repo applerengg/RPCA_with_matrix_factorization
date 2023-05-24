@@ -1,0 +1,13 @@
+developed with python version: 3.11
+(at least python 3.6+ is required)
+
+required libraries: 
+
+numpy 
+scikit-learn
+scipy
+moviepy # for video background extraction
+matplotlib
+
+
+
